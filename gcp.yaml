@@ -1,0 +1,14 @@
+plugin: gcp_compute
+projects:
+  - cloudshell-17111
+auth_kind: machineaccount
+keyed_groups:
+  - prefix: gcp
+    key: labels
+  - prefix: tags
+    key: tags
+
+  - name: Grant all privileges to mediawiki user
+Community.mysql.mysql_query:
+Login_user: root
+Query: “grant all on mediawiki’@’%’ identified by ‘mediawiki’”
