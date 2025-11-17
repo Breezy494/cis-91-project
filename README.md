@@ -1,0 +1,1 @@
+"For centuries, we feared the forces of Darkness massing against us. These Guardians show us what we are, what we have always been, and what we will be again. We are what remains of the Light and we will not be stamped out."
