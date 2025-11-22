@@ -1,0 +1,113 @@
+---
+- name: Configure MariaDB with Persistent Disk
+  hosts: all
+  become: true
+  vars:
+    db_name: mediawiki
+    db_user: wikiuser
+    db_pass: "StrongPassword123!"
+    disk_device: "/dev/disk/by-id/google-db_data"
+    mount_point: "/var/lib/mysql"
+
+  tasks:
+
+    - name: Format the persistent disk (ext4)
+      filesystem:
+        fstype: ext4
+        dev: "{{ disk_device }}"
+
+    - name: Mount the disk to /var/lib/mysql
+      mount:
+        path: "{{ mount_point }}"
+        src: "{{ disk_device }}"
+        fstype: ext4
+        state: mounted
+
+    - name: Install MariaDB and Python dependencies
+      apt:
+        name:
+          - mariadb-server
+          - python3-pymysql
+        state: present
+        update_cache: yes
+
+    - name: Ensure MariaDB is running
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+
+    - name: Enable Remote Connections (Bind Address)
+      lineinfile:
+        path: /etc/mysql/mariadb.conf.d/50-server.cnf
+        regexp: '^bind-address'
+        line: 'bind-address = 0.0.0.0'
+      notify: Restart MariaDB
+
+    - name: Create MediaWiki database
+      community.mysql.mysql_db:
+        name: "{{ db_name }}"
+        state: present
+        encoding: utf8mb4
+        collation: utf8mb4_unicode_ci
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create MediaWiki database user
+      community.mysql.mysql_user:
+        name: "{{ db_user }}"
+        password: "{{ db_pass }}"
+        host: "%"
+        priv: "{{ db_name }}.*:ALL"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+  handlers:
+    - name: Restart MariaDB
+      service:
+        name: mariadb
+        state: restarted
+    - name: Create daily backup script
+      copy:
+        dest: /usr/local/bin/backup_mysql.sh
+        mode: '0700'
+        content: |
+          #!/bin/bash
+          DATE=$(date +%F)
+          BACKUP_PATH="/tmp/mysql_backup_$DATE.tar.gz"
+          BUCKET_NAME="{{ bucket_name }}"
+          
+          echo "Starting Backup for $DATE"
+          
+          # 1. STOP the service to ensure data consistency (REQUIRED)
+          systemctl stop mariadb
+          
+          # 2. Create the tarball
+          tar -czf $BACKUP_PATH /var/lib/mysql
+          
+          # 3. START the service immediately
+          systemctl start mariadb
+          
+          # 4. Upload to Google Cloud Storage
+          # Uses the VM's service account automatically
+          gcloud storage cp $BACKUP_PATH gs://$BUCKET_NAME/
+          
+          # 5. Clean up local file
+          rm $BACKUP_PATH
+          echo "Backup completed and uploaded to gs://$BUCKET_NAME/"
+
+    - name: Schedule backup at 3am daily
+      cron:
+        name: "Daily MySQL Backup"
+        minute: "0"
+        hour: "3"
+        job: "/usr/local/bin/backup_mysql.sh >> /var/log/mysql_backup.log 2>&1"
+        state: present
+
+    - name: Install Google Cloud Ops Agent
+      hosts: all
+      become: true
+      roles:
+      - role: googlecloudplatform.google_cloud_ops_agents
+        vars:
+        agent_type: ops-agent
+        package_state: present

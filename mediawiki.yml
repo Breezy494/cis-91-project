@@ -1,0 +1,64 @@
+---
+- name: Install MediaWiki Web Server
+  hosts: all
+  become: true
+  vars:
+    mediawiki_version: "1.41.1"
+    mediawiki_major: "1.41"
+    install_dir: "/var/www/html/mediawiki"
+    server_name: "http://{{ ansible_default_ipv4.address }}/mediawiki"
+    db_host: "localhost"
+    db_name: "mediawiki"
+    db_user: "wikiuser"
+    db_pass: "Password123!"
+
+  tasks:
+    - name: Install Apache and PHP
+      apt:
+        name:
+          - apache2
+          - php
+          - php-mysql
+          - php-xml
+          - php-mbstring
+          - php-intl
+          - libapache2-mod-php
+        state: present
+        update_cache: yes
+
+    - name: Download and Extract MediaWiki
+      unarchive:
+        src: "https://releases.wikimedia.org/mediawiki/{{ mediawiki_major }}/mediawiki-{{ mediawiki_version }}.tar.gz"
+        dest: "/var/www/html"
+        remote_src: yes
+        creates: "{{ install_dir }}"
+
+    - name: Rename directory
+      command: mv /var/www/html/mediawiki-{{ mediawiki_version }} {{ install_dir }}
+      args:
+        creates: "{{ install_dir }}"
+
+    - name: Generate LocalSettings.php
+      template:
+        src: LocalSettings.php.j2
+        dest: "{{ install_dir }}/LocalSettings.php"
+
+    - name: Run MediaWiki Installer (CLI)
+      command: >
+        php {{ install_dir }}/maintenance/install.php
+        --dbname={{ db_name }}
+        --dbuser={{ db_user }}
+        --dbpass={{ db_pass }}
+        --dbserver={{ db_host }}
+        --scriptpath=/mediawiki
+        --pass=AdminPass123
+        "MyWiki" "AdminUser"
+      args:
+        creates: "{{ install_dir }}/LocalSettings.php"
+
+    - name: Set Permissions
+      file:
+        path: "{{ install_dir }}"
+        owner: www-data
+        group: www-data
+        recurse: yes
