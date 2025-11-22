@@ -5,7 +5,7 @@
   vars:
     db_name: mediawiki
     db_user: wikiuser
-    db_pass: "StrongPassword123!"
+    db_pass: "Password123!"
     disk_device: "/dev/disk/by-id/google-db_data"
     mount_point: "/var/lib/mysql"
 
