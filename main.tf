@@ -107,7 +107,7 @@ metadata = {
     }
   }
  provisioner "local-exec" {
-    command = "ansible-playbook -u ubuntu --private-key ~/.ssh/id_rsa -i '${self.network_interface.0.access_config.0.nat_ip},' playbook.yml"
+    command = "ansible-playbook -u ubuntu --private-key ~/.ssh/id_rsa -i '${self.network_interface.0.access_config.0.nat_ip},' mediawiki.yml"
   }
 }
 
@@ -148,6 +148,6 @@ metadata = {
     }
   }
  provisioner "local-exec" {
-    command = "ansible-playbook -u ubuntu --private-key ~/.ssh/id_rsa -i '${self.network_interface.0.access_config.0.nat_ip},' playbook.yml"
+    command = "ansible-playbook -u ubuntu --private-key ~/.ssh/id_rsa -i '${self.network_interface.0.access_config.0.nat_ip},' install_db.yml"
   }
 }

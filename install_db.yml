@@ -78,20 +78,18 @@
           
           echo "Starting Backup for $DATE"
           
-          # 1. STOP the service to ensure data consistency (REQUIRED)
+         
           systemctl stop mariadb
           
-          # 2. Create the tarball
+         
           tar -czf $BACKUP_PATH /var/lib/mysql
           
-          # 3. START the service immediately
           systemctl start mariadb
           
-          # 4. Upload to Google Cloud Storage
-          # Uses the VM's service account automatically
+          
           gcloud storage cp $BACKUP_PATH gs://$BUCKET_NAME/
           
-          # 5. Clean up local file
+        
           rm $BACKUP_PATH
           echo "Backup completed and uploaded to gs://$BUCKET_NAME/"
 
