@@ -13,7 +13,7 @@ variable "private_key_path" {
 variable "my_ip_cidr" {
   description = "The CIDR block of the network to allow SSH access from."
   type        = string
-  default     = "107.193.186.148/32"
+  default     = "0.0.0.0/0"
 }
 
 variable "gcp_region" {
