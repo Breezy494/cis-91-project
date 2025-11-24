@@ -16,6 +16,9 @@ else
   git clone https://github.com/Breezy494/cis-91-project.git /opt/ansible
 fi
 
+
+cd /opt/ansible
+
 gcloud secrets versions access latest --secret="${vault_secret_id}" > /opt/ansible/.vault_pass
 
 ansible-playbook \
