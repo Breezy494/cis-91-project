@@ -1,4 +1,10 @@
 project = "cis-91-471119"
 public_key_path = "/home/drewmilliman45/.ssh/id_ed25519.pub"
 private_key_path = "/home/drewmilliman45/.ssh/id_ed25519"
-my_ip_cidr = "107.193.186.148/32" 
+my_ip_cidr = "107.193.186.148/32" # /home/drewmilliman45/cis-91/terraform.tfvars
+gcp_region = "us-central1"
+gcp_zone   = "us-central1-a"
+web_machine_type = "e2-small"
+db_machine_type = "e2-medium"
+vm_image = "ubuntu-os-cloud/ubuntu-2204-lts"
+subnet_cidr = "10.10.1.0/24"
