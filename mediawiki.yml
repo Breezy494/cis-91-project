@@ -7,10 +7,9 @@
     mediawiki_major: "1.41"
     install_dir: "/var/www/html/mediawiki"
     server_name: "http://{{ ansible_default_ipv4.address }}/mediawiki"
-    db_host: "localhost"
+    db_host: "{{ db_ip }}"
     db_name: "mediawiki"
     db_user: "wikiuser"
-    db_pass: "Password123!"
 
   tasks:
     - name: Install Apache and PHP
@@ -38,18 +37,19 @@
       args:
         creates: "{{ install_dir }}"
 
-    - name: Generate LocalSettings.php
-      template:
-        src: LocalSettings.php.j2
-        dest: "{{ install_dir }}/LocalSettings.php"
+    - name: Fetch MediaWiki DB password from Secret Manager
+      command: "gcloud secrets versions access latest --secret={{ db_pass_secret_id }}"
+      register: db_password_result
+      changed_when: false
+      no_log: true
 
     - name: Run MediaWiki Installer (CLI)
       command: >
         php {{ install_dir }}/maintenance/install.php
         --dbname={{ db_name }}
         --dbuser={{ db_user }}
-        --dbpass={{ db_pass }}
-        --dbserver={{ db_host }}
+        --dbpass={{ db_password_result.stdout }}
+        --dbhost={{ db_host }}
         --scriptpath=/mediawiki
         --pass=AdminPass123
         "MyWiki" "AdminUser"
@@ -62,3 +62,37 @@
         owner: www-data
         group: www-data
         recurse: yes
+
+    - name: Add Google Cloud Ops Agent repository
+      shell: |
+        curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+        bash add-google-cloud-ops-agent-repo.sh --also-install
+      args:
+        creates: /etc/apt/sources.list.d/google-cloud-ops-agent.list
+      changed_when: false
+
+    - name: Configure Ops Agent for Apache
+      copy:
+        dest: /etc/google-cloud-ops-agent/config.yaml
+        content: |
+          logging:
+            receivers:
+              apache_access:
+                type: files
+                include_paths:
+                  - /var/log/apache2/access.log
+              apache_error:
+                type: files
+                include_paths:
+                  - /var/log/apache2/error.log
+            service:
+              pipelines:
+                default_pipeline:
+                  receivers: [apache_access, apache_error]
+        notify: Restart Ops Agent
+
+  handlers:
+    - name: Restart Ops Agent
+      service:
+        name: google-cloud-ops-agent
+        state: restarted

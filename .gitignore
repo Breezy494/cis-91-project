@@ -2,5 +2,5 @@
 .terraform/
 *.tfstate
 *.tfstate.*
-.terraform.lock.hcl
 crash.log
+.vault_pass

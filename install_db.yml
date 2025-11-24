@@ -5,23 +5,10 @@
   vars:
     db_name: mediawiki
     db_user: wikiuser
-    db_pass: "Password123!"
     disk_device: "/dev/disk/by-id/google-db_data"
     mount_point: "/var/lib/mysql"
 
   tasks:
-
-    - name: Format the persistent disk (ext4)
-      filesystem:
-        fstype: ext4
-        dev: "{{ disk_device }}"
-
-    - name: Mount the disk to /var/lib/mysql
-      mount:
-        path: "{{ mount_point }}"
-        src: "{{ disk_device }}"
-        fstype: ext4
-        state: mounted
 
     - name: Install MariaDB and Python dependencies
       apt:
@@ -29,13 +16,72 @@
           - mariadb-server
           - python3-pymysql
         state: present
-        update_cache: yes
+        update_cache: 
 
-    - name: Ensure MariaDB is running
+    - name: Format the persistent disk (ext4)
+      filesystem:
+        fstype: ext4
+        dev: "{{ disk_device }}"
+
+    - name: Check if disk is already mounted
+      command: findmnt --source {{ disk_device }} --target {{ mount_point }}
+      register: mount_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Move MariaDB data and mount persistent disk
+      block:
+        - name: Stop MariaDB to prepare for mounting
+          service:
+            name: mariadb
+            state: stopped
+
+        - name: Create a temporary mount point
+          file:
+            path: /mnt/db_data
+            state: directory
+
+        - name: Mount the persistent disk temporarily
+          mount:
+            path: /mnt/db_data
+            src: "{{ disk_device }}"
+            fstype: ext4
+            state: mounted
+
+        - name: Copy MariaDB data to the persistent disk
+          command: rsync -a {{ mount_point }}/ /mnt/db_data/
+          args:
+            removes: "{{ mount_point }}/" 
+
+        - name: Unmount the temporary disk and mount to the final destination
+          mount:
+            path: "{{ item.path }}"
+            src: "{{ item.src }}"
+            fstype: ext4
+            state: "{{ item.state }}"
+          with_items:
+            - { path: '/mnt/db_data', src: '{{ disk_device }}', state: 'unmounted' }
+            - { path: '{{ mount_point }}', src: '{{ disk_device }}', state: 'mounted' }
+      when: mount_check.rc != 0
+
+    - name: Ensure MariaDB is running and enabled
       service:
         name: mariadb
         state: started
         enabled: yes
+
+    - name: Fetch DB root password from Secret Manager
+      command: "gcloud secrets versions access latest --secret={{ db_root_secret_id }}"
+      register: db_root_password_result
+      changed_when: false
+
+    - name: Set MariaDB root password
+      community.mysql.mysql_user:
+        name: root
+        host: localhost
+        password: "{{ db_root_password_result.stdout }}"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
 
     - name: Enable Remote Connections (Bind Address)
       lineinfile:
@@ -61,11 +107,6 @@
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
-  handlers:
-    - name: Restart MariaDB
-      service:
-        name: mariadb
-        state: restarted
     - name: Create daily backup script
       copy:
         dest: /usr/local/bin/backup_mysql.sh
@@ -74,24 +115,32 @@
           #!/bin/bash
           DATE=$(date +%F)
           BACKUP_PATH="/tmp/mysql_backup_$DATE.tar.gz"
-          BUCKET_NAME="{{ bucket_name }}"
+          BUCKET_NAME="{{ backup_bucket_name }}"
           
-          echo "Starting Backup for $DATE"
+          echo "Starting database backup for $DATE"
           
-         
-          systemctl stop mariadb
+          # Dump the database to a file and then compress it.
+          # This avoids stopping the database service.
+          mysqldump --defaults-file=/root/.my.cnf --all-databases | gzip > $BACKUP_PATH
           
-         
-          tar -czf $BACKUP_PATH /var/lib/mysql
-          
-          systemctl start mariadb
-          
-          
+          # Upload the backup to Google Cloud Storage
           gcloud storage cp $BACKUP_PATH gs://$BUCKET_NAME/
           
-        
+          # Clean up the local backup file
           rm $BACKUP_PATH
           echo "Backup completed and uploaded to gs://$BUCKET_NAME/"
+
+    - name: Create .my.cnf for root user for passwordless mysqldump
+      template:
+        src: my.cnf.j2
+        dest: /root/.my.cnf
+        content: |
+          [mysqldump]
+          user=root
+          password={{ db_root_password_result.stdout }}
+        owner: root
+        group: root
+        mode: '0600'
 
     - name: Schedule backup at 3am daily
       cron:
@@ -101,11 +150,41 @@
         job: "/usr/local/bin/backup_mysql.sh >> /var/log/mysql_backup.log 2>&1"
         state: present
 
-    - name: Install Google Cloud Ops Agent
-      hosts: all
-      become: true
-      roles:
-      - role: googlecloudplatform.google_cloud_ops_agents
-        vars:
-        agent_type: ops-agent
-        package_state: present
+    - name: Add Google Cloud Ops Agent repository
+      shell: |
+        curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+        bash add-google-cloud-ops-agent-repo.sh --also-install
+      args:
+        creates: /etc/apt/sources.list.d/google-cloud-ops-agent.list
+      changed_when: false
+
+    - name: Configure Ops Agent for MariaDB and Backups
+      copy:
+        dest: /etc/google-cloud-ops-agent/config.yaml
+        content: |
+          logging:
+            receivers:
+              mariadb_errors:
+                type: files
+                include_paths:
+                  - /var/log/mysql/error.log
+              backup_logs:
+                type: files
+                include_paths:
+                  - /var/log/mysql_backup.log
+              mariadb_slow_queries:
+                type: files
+                include_paths:
+                  - /var/log/mysql/slow-query.log
+            service:
+              pipelines:
+                default_pipeline:
+                  receivers: [mariadb_errors, backup_logs, mariadb_slow_queries]
+        notify: Restart Ops Agent
+
+  handlers:
+    - name: Restart MariaDB
+      service:
+        name: mariadb
+        state: restarted
+        
