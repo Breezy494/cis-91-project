@@ -16,7 +16,7 @@
           - mariadb-server
           - python3-pymysql
         state: present
-        update_cache: 
+        update_cache: yes
 
     - name: Format the persistent disk (ext4)
       filesystem:
