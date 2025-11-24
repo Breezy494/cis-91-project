@@ -10,7 +10,7 @@ resource "google_compute_instance" "vm_instance" {
   name         = "mediawiki-instance"
   machine_type = var.web_machine_type
   project      = var.project
-  tags         = ["web"]
+  tags         = ["web","http-server"]
 
   boot_disk {
     initialize_params {
@@ -30,7 +30,7 @@ resource "google_compute_instance" "vm_instance" {
   metadata = {
     ssh-keys                = "ubuntu:${file(var.public_key_path)}"
     metadata_startup_script = templatefile("${path.module}/startup-web.sh.tpl", {
-      db_ip           = google_compute_instance.vm_instance_db.network_interface.0.network_ip,
+      db_private_ip   = google_compute_instance.vm_instance_db.network_interface.0.network_ip,
       vault_secret_id = google_secret_manager_secret.ansible_vault_pass.secret_id,
       db_pass_secret_id = google_secret_manager_secret.wikiuser_db_pass.secret_id
     })
