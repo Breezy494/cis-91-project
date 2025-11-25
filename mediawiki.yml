@@ -49,7 +49,8 @@
         --dbname={{ db_name }}
         --dbuser={{ db_user }}
         --dbpass={{ db_password_result.stdout }}
-        --dbhost={{ db_host }}
+        --dbserver={{ db_host }}
+        --server="http://{{ public_ip }}"
         --scriptpath=/mediawiki
         --pass=AdminPass123
         "MyWiki" "AdminUser"
@@ -62,6 +63,7 @@
         owner: www-data
         group: www-data
         recurse: yes
+      notify: Restart Apache
 
     - name: Add Google Cloud Ops Agent repository
       shell: |
@@ -89,10 +91,15 @@
               pipelines:
                 default_pipeline:
                   receivers: [apache_access, apache_error]
-        notify: Restart Ops Agent
+      notify: Restart Ops Agent
 
   handlers:
     - name: Restart Ops Agent
       service:
         name: google-cloud-ops-agent
+        state: restarted
+
+    - name: Restart Apache
+      service:
+        name: apache2
         state: restarted

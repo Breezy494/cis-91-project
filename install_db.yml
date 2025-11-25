@@ -23,11 +23,10 @@
         fstype: ext4
         dev: "{{ disk_device }}"
 
-    - name: Check if disk is already mounted
-      command: findmnt --source {{ disk_device }} --target {{ mount_point }}
-      register: mount_check
-      ignore_errors: true
-      changed_when: false
+    - name: Check if mount point is already a mount
+      stat:
+        path: "{{ mount_point }}"
+      register: mount_stat
 
     - name: Move MariaDB data and mount persistent disk
       block:
@@ -36,33 +35,20 @@
             name: mariadb
             state: stopped
 
-        - name: Create a temporary mount point
-          file:
-            path: /mnt/db_data
-            state: directory
-
-        - name: Mount the persistent disk temporarily
+        - name: Move original MariaDB data directory
+          command: mv /var/lib/mysql /var/lib/mysql.bak
+          args:
+            creates: /var/lib/mysql.bak
+        - name: Mount the persistent disk to the final destination
           mount:
-            path: /mnt/db_data
+            path: "{{ mount_point }}"
             src: "{{ disk_device }}"
             fstype: ext4
             state: mounted
 
         - name: Copy MariaDB data to the persistent disk
-          command: rsync -a {{ mount_point }}/ /mnt/db_data/
-          args:
-            removes: "{{ mount_point }}/" 
-
-        - name: Unmount the temporary disk and mount to the final destination
-          mount:
-            path: "{{ item.path }}"
-            src: "{{ item.src }}"
-            fstype: ext4
-            state: "{{ item.state }}"
-          with_items:
-            - { path: '/mnt/db_data', src: '{{ disk_device }}', state: 'unmounted' }
-            - { path: '{{ mount_point }}', src: '{{ disk_device }}', state: 'mounted' }
-      when: mount_check.rc != 0
+          command: rsync -av --remove-source-files /var/lib/mysql.bak/ {{ mount_point }}/
+      when: not mount_stat.stat.get('ismnt', false)
 
     - name: Ensure MariaDB is running and enabled
       service:
@@ -96,6 +82,8 @@
         state: present
         encoding: utf8mb4
         collation: utf8mb4_unicode_ci
+        login_user: root
+        login_password: "{{ db_root_password_result.stdout }}"
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
     - name: Create MediaWiki database user
@@ -105,6 +93,8 @@
         host: "%"
         priv: "{{ db_name }}.*:ALL"
         state: present
+        login_user: root
+        login_password: "{{ db_root_password_result.stdout }}"
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
     - name: Create daily backup script
@@ -131,8 +121,7 @@
           echo "Backup completed and uploaded to gs://$BUCKET_NAME/"
 
     - name: Create .my.cnf for root user for passwordless mysqldump
-      template:
-        src: my.cnf.j2
+      copy:
         dest: /root/.my.cnf
         content: |
           [mysqldump]
@@ -180,11 +169,15 @@
               pipelines:
                 default_pipeline:
                   receivers: [mariadb_errors, backup_logs, mariadb_slow_queries]
-        notify: Restart Ops Agent
+      notify: Restart Ops Agent
 
   handlers:
     - name: Restart MariaDB
       service:
         name: mariadb
         state: restarted
-        
+
+    - name: Restart Ops Agent
+      service:
+        name: google-cloud-ops-agent
+        state: restarted

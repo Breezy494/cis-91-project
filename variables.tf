@@ -10,14 +10,11 @@ variable "private_key_path" {
   description = "The absolute path to the SSH private key file used for provisioning."
   type        = string
 }
-variable "my_ip_cidr" {
-  description = "The CIDR block of the network to allow SSH access from."
-  type        = string
-}
 
 variable "gcp_region" {
   description = "The GCP region to deploy resources in."
   type        = string
+
 }
 variable "gcp_zone" {
   description = "The GCP zone to deploy resources in."
@@ -39,4 +36,14 @@ variable "vm_image" {
 variable "subnet_cidr" {
    description = "The CIDR block for the VPC subnetwork."
    type        = string
+}
+
+variable "db_user_password_secret_id" {
+  description = "The ID for the Secret Manager secret for the MediaWiki DB user password."
+  type        = string
+}
+
+variable "service_account_id" {
+  description = "The account ID for the VM service account."
+  type        = string
 }
