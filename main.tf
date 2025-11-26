@@ -95,6 +95,12 @@ resource "google_project_iam_member" "storage_admin" {
   member  = "serviceAccount:${google_service_account.vm_sa.email}"
 }
 
+resource "google_project_iam_member" "logging_writer" {
+  project = var.project
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.vm_sa.email}"
+}
+
 resource "google_compute_address" "db_static_ip" {
   name = "db-provisioning-ip"
 }
